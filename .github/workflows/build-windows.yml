@@ -1,0 +1,63 @@
+name: Pacchetto Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - claude/progetto-documento-partenza-4izfcd
+    paths:
+      - "app_bolle.py"
+      - "cerca_bolle.py"
+      - "bolle_core.py"
+      - "requirements.txt"
+      - ".github/workflows/build-windows.yml"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Installa le dipendenze Python
+        run: |
+          pip install -r requirements.txt pyinstaller
+
+      - name: Installa Tesseract OCR (Chocolatey) + lingua italiana
+        shell: pwsh
+        run: |
+          choco install tesseract -y --no-progress
+          $tessdata = "C:\Program Files\Tesseract-OCR\tessdata"
+          Invoke-WebRequest -Uri "https://github.com/tesseract-ocr/tessdata_fast/raw/main/ita.traineddata" -OutFile "$tessdata\ita.traineddata"
+          & "C:\Program Files\Tesseract-OCR\tesseract.exe" --list-langs
+
+      - name: Compila app_bolle (web)
+        run: >
+          pyinstaller --onedir --noconfirm --name ArchivioBolleWeb
+          --collect-all uvicorn
+          app_bolle.py
+
+      - name: Compila cerca_bolle (CLI)
+        run: >
+          pyinstaller --onedir --noconfirm --name cerca_bolle
+          cerca_bolle.py
+
+      - name: Assembla il pacchetto
+        shell: pwsh
+        run: |
+          $out = "dist\ArchivioBolle"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          Copy-Item -Recurse -Force "dist\ArchivioBolleWeb" "$out\web"
+          Copy-Item -Recurse -Force "dist\cerca_bolle" "$out\cli"
+          Copy-Item -Recurse -Force "C:\Program Files\Tesseract-OCR" "$out\web\tesseract"
+          Copy-Item -Recurse -Force "C:\Program Files\Tesseract-OCR" "$out\cli\tesseract"
+          Copy-Item "README.md" "$out\README.md"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ArchivioBolle-Windows
+          path: dist/ArchivioBolle
+          retention-days: 90

@@ -504,3 +504,18 @@ $('#cartella').addEventListener('keydown', e => { if(e.key==='Enter') indicizzaC
 </script>
 </body>
 </html>"""
+
+# ---------------------------------------------------------------- avvio diretto
+# Permette di lanciare "python app_bolle.py" (o il .exe impacchettato) senza
+# passare da `uvicorn app_bolle:app ...`; apre anche il browser da solo.
+
+if __name__ == "__main__":
+    import threading
+    import webbrowser
+
+    import uvicorn
+
+    porta = 8000
+    threading.Timer(1.5, lambda: webbrowser.open(f"http://127.0.0.1:{porta}")).start()
+    print(f"Archivio Bolle in ascolto su http://localhost:{porta} — CTRL+C per fermarlo.")
+    uvicorn.run(app, host="0.0.0.0", port=porta)

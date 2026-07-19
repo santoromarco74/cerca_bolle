@@ -13,6 +13,7 @@ import re
 import secrets
 import shutil as _shutil
 import sqlite3
+import sys
 from pathlib import Path
 
 from PIL import Image
@@ -23,10 +24,20 @@ LANG = "ita"
 
 # --- Rilevamento Tesseract su Windows -------------------------------------
 # pytesseract e' solo un wrapper: serve tesseract.exe installato.
-# Se non e' nel PATH, lo cerchiamo nei percorsi di installazione tipici.
+# Se non e' nel PATH, lo cerchiamo nei percorsi di installazione tipici,
+# più una cartella "tesseract" portatile accanto all'eseguibile — così
+# quando l'app è impacchettata (PyInstaller) con Tesseract incluso, i
+# colleghi non devono installare nulla a parte.
+def _cartella_pacchetto() -> Path:
+    if getattr(sys, "frozen", False):
+        # PyInstaller: _MEIPASS con --onefile, altrimenti la cartella del .exe
+        return Path(getattr(sys, "_MEIPASS", None) or sys.executable).parent
+    return Path(__file__).resolve().parent
+
 def _rileva_tesseract():
     if os.name == "nt" and not _shutil.which("tesseract"):
         candidati = [
+            str(_cartella_pacchetto() / "tesseract" / "tesseract.exe"),
             r"C:\Program Files\Tesseract-OCR\tesseract.exe",
             r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
             os.path.expandvars(r"%LOCALAPPDATA%\Programs\Tesseract-OCR\tesseract.exe"),
