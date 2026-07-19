@@ -51,14 +51,21 @@ python cerca_bolle.py cerca --tutto "coop savona"
 
 ## Uso — web (`app_bolle.py`)
 
+L'app richiede due variabili d'ambiente per l'autenticazione HTTP Basic
+(un solo utente condiviso, sufficiente per un archivio interno di reparto):
+
 ```bash
+export BOLLE_USER=magazzino
+export BOLLE_PASS=una-password-a-scelta
+# PowerShell: $env:BOLLE_USER="magazzino"; $env:BOLLE_PASS="..."
+
 uvicorn app_bolle:app --host 0.0.0.0 --port 8000
 ```
 
-Poi apri `http://localhost:8000`. La pagina permette di cercare, caricare
-nuove bolle via drag&drop (OCR e indicizzazione immediati) e visualizzare le
-pagine direttamente nel browser (utile perché i TIF non sono renderizzabili
-nativamente).
+Poi apri `http://localhost:8000` — il browser chiederà utente e password.
+La pagina permette di cercare, caricare nuove bolle via drag&drop (OCR e
+indicizzazione immediati) e visualizzare le pagine direttamente nel browser
+(utile perché i TIF non sono renderizzabili nativamente).
 
 Endpoint principali:
 
@@ -95,17 +102,20 @@ Endpoint principali:
 
 - Il DB SQLite viene creato/aperto nella cartella da cui si lancia lo
   script/server: lanciarlo da directory diverse produce `bolle.db` diversi.
-- L'OCR in upload è **sincrono**: con più file grandi caricati insieme la
-  richiesta resta bloccata per diversi secondi a pagina. Non un problema con
-  bolle singole; da rivedere (coda/background task) se il volume cresce.
+- L'OCR in upload gira in un thread separato per ogni file (`asyncio.to_thread`),
+  e più file caricati insieme vengono processati in parallelo invece che in
+  coda: un upload lungo non blocca più né gli altri file dello stesso upload
+  né le altre richieste al server (ricerche, altri utenti). Il database ha
+  un `busy_timeout` per assorbire scritture concorrenti.
 - Le regex di parsing sono tarate solo su GAER: bolle di altri fornitori con
   layout diverso vanno indicizzate correttamente come testo, ma senza
   estrazione automatica di codice/descrizione riga per riga.
 - Il fallback fuzzy fa una scansione lineare di tutte le righe della tabella
   `righe` in Python ad ogni ricerca senza match esatto — accettabile fino a
   qualche decina di migliaia di righe.
-- Nessuna autenticazione: l'app web non ha login né controllo accessi, va
-  quindi esposta solo su rete fidata/locale.
+- Autenticazione HTTP Basic con un solo utente condiviso (`BOLLE_USER`/
+  `BOLLE_PASS`): sufficiente contro l'accesso casuale su una rete condivisa,
+  non un vero sistema multi-utente con permessi differenziati.
 
 ## Prossimi possibili passi
 

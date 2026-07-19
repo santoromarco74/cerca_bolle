@@ -46,6 +46,9 @@ _rileva_tesseract()
 
 def apri_db(db_path: str = DB_PATH) -> sqlite3.Connection:
     con = sqlite3.connect(db_path)
+    # con più upload concorrenti (thread separati) può capitare che due scritture
+    # si sovrappongano: aspetta invece di fallire subito con "database is locked"
+    con.execute("PRAGMA busy_timeout = 5000")
     con.executescript("""
         CREATE TABLE IF NOT EXISTS documenti (
             id INTEGER PRIMARY KEY,

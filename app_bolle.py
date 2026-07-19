@@ -5,18 +5,26 @@ app_bolle.py — Archivio bolle ricercabile, versione web.
 Avvio:
     pip install fastapi uvicorn python-multipart pytesseract pillow pymupdf
     sudo apt install tesseract-ocr tesseract-ocr-ita
+
+    # credenziali obbligatorie (autenticazione HTTP Basic su tutta l'app):
+    export BOLLE_USER=magazzino
+    export BOLLE_PASS=una-password-a-scelta      # PowerShell: $env:BOLLE_PASS="..."
+
     uvicorn app_bolle:app --host 0.0.0.0 --port 8000
 
-Poi apri http://localhost:8000
+Poi apri http://localhost:8000 (il browser chiederà utente/password)
 I file caricati vengono salvati in ./archivio_bolle/ e indicizzati in bolle.db
 """
 
-import shutil
+import asyncio
+import os
+import secrets
 import sqlite3
 from pathlib import Path
 
-from fastapi import FastAPI, UploadFile, File
+from fastapi import Depends, FastAPI, HTTPException, UploadFile, File, status
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from PIL import Image
 
 from bolle_core import apri_db as _apri_db, indicizza_file as _indicizza_file, trigrammi
@@ -24,7 +32,32 @@ from bolle_core import apri_db as _apri_db, indicizza_file as _indicizza_file, t
 ARCHIVIO = Path("archivio_bolle")
 ARCHIVIO.mkdir(exist_ok=True)
 
-app = FastAPI(title="Archivio Bolle")
+# ---------------------------------------------------------------- autenticazione
+# Un solo utente condiviso (HTTP Basic): sufficiente per un archivio interno
+# a un reparto, senza dover gestire un vero sistema di account.
+
+_UTENTE = os.environ.get("BOLLE_USER")
+_PASSWORD = os.environ.get("BOLLE_PASS")
+if not _UTENTE or not _PASSWORD:
+    raise SystemExit(
+        "Imposta le variabili d'ambiente BOLLE_USER e BOLLE_PASS prima di avviare "
+        "il server (es. export BOLLE_USER=magazzino / export BOLLE_PASS=...). "
+        "Servono per proteggere l'accesso all'archivio via HTTP Basic Auth."
+    )
+
+_security = HTTPBasic()
+
+def _verifica_credenziali(credenziali: HTTPBasicCredentials = Depends(_security)):
+    utente_ok = secrets.compare_digest(credenziali.username, _UTENTE)
+    password_ok = secrets.compare_digest(credenziali.password, _PASSWORD)
+    if not (utente_ok and password_ok):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenziali non valide",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+
+app = FastAPI(title="Archivio Bolle", dependencies=[Depends(_verifica_credenziali)])
 
 def apri_db():
     return _apri_db()
@@ -93,18 +126,22 @@ def cerca_documenti(query: str, limite: int = 20) -> list[dict]:
 
 # ---------------------------------------------------------------- API
 
+def _salva_e_indicizza(nome_file: str, contenuto: bytes) -> dict:
+    """Gira in un thread separato: salvataggio + OCR non bloccano l'event loop."""
+    dest = ARCHIVIO / Path(nome_file).name
+    dest.write_bytes(contenuto)
+    try:
+        return indicizza_file(dest)
+    except Exception as e:
+        return {"file": nome_file, "stato": f"errore: {e}"}
+
 @app.post("/api/upload")
 async def upload(files: list[UploadFile] = File(...)):
-    esiti = []
-    for f in files:
-        dest = ARCHIVIO / Path(f.filename).name
-        with dest.open("wb") as out:
-            shutil.copyfileobj(f.file, out)
-        try:
-            esiti.append(indicizza_file(dest))
-        except Exception as e:
-            esiti.append({"file": f.filename, "stato": f"errore: {e}"})
-    return JSONResponse(esiti)
+    contenuti = [(f.filename, await f.read()) for f in files]
+    esiti = await asyncio.gather(
+        *(asyncio.to_thread(_salva_e_indicizza, nome, dati) for nome, dati in contenuti)
+    )
+    return JSONResponse(list(esiti))
 
 @app.get("/api/cerca")
 def api_cerca(q: str, modo: str = "righe"):
