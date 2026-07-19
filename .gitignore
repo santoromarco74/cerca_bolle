@@ -1,0 +1,16 @@
+# Dati runtime — generati dall'uso dell'app, non fanno parte del codice sorgente
+bolle.db
+bolle.db-journal
+bolle.db-wal
+bolle.db-shm
+archivio_bolle/
+
+# Bytecode Python
+__pycache__/
+*.pyc
+
+# Archivi di backup/upload ridondanti (copie dei sorgenti già presenti nel repo)
+*.zip
+
+# Build Java
+bolle_java/target/
