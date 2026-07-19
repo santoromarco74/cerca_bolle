@@ -51,13 +51,15 @@ python cerca_bolle.py cerca --tutto "coop savona"
 
 ## Uso — web (`app_bolle.py`)
 
-L'app richiede due variabili d'ambiente per l'autenticazione HTTP Basic
-(un solo utente condiviso, sufficiente per un archivio interno di reparto):
+L'app richiede almeno un utente configurato (autenticazione HTTP Basic su
+tutte le rotte). Gli utenti si gestiscono da riga di comando — le password
+sono salvate in `bolle.db` come hash (PBKDF2-HMAC-SHA256 con salt per
+utente), mai in chiaro:
 
 ```bash
-export BOLLE_USER=magazzino
-export BOLLE_PASS=una-password-a-scelta
-# PowerShell: $env:BOLLE_USER="magazzino"; $env:BOLLE_PASS="..."
+python cerca_bolle.py utente aggiungi magazzino   # chiede la password (due volte)
+python cerca_bolle.py utente lista
+python cerca_bolle.py utente rimuovi magazzino
 
 uvicorn app_bolle:app --host 0.0.0.0 --port 8000
 ```
@@ -117,9 +119,10 @@ Endpoint principali:
 - Il fallback fuzzy fa una scansione lineare di tutte le righe della tabella
   `righe` in Python ad ogni ricerca senza match esatto — accettabile fino a
   qualche decina di migliaia di righe.
-- Autenticazione HTTP Basic con un solo utente condiviso (`BOLLE_USER`/
-  `BOLLE_PASS`): sufficiente contro l'accesso casuale su una rete condivisa,
-  non un vero sistema multi-utente con permessi differenziati.
+- Autenticazione HTTP Basic con utenti gestiti da CLI (`python cerca_bolle.py
+  utente ...`), password hashate nel DB: ogni persona ha le proprie
+  credenziali, ma non ci sono ruoli/permessi differenziati — chiunque abbia
+  un account può fare tutto (cercare, caricare, scaricare).
 
 ## Prossimi possibili passi
 

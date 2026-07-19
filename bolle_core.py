@@ -6,8 +6,11 @@ trigram: tutto ciò che le due interfacce usano identico vive qui, per evitare
 di doverlo tenere allineato a mano in due file.
 """
 
+import hashlib
+import hmac
 import os
 import re
+import secrets
 import shutil as _shutil
 import sqlite3
 from pathlib import Path
@@ -88,8 +91,53 @@ def apri_db(db_path: str = DB_PATH) -> sqlite3.Connection:
             INSERT INTO documenti_fts(documenti_fts, rowid, testo_completo)
             VALUES ('delete', old.id, old.testo_completo);
         END;
+        CREATE TABLE IF NOT EXISTS utenti (
+            username TEXT PRIMARY KEY,
+            salt TEXT NOT NULL,
+            hash TEXT NOT NULL
+        );
     """)
     return con
+
+# ---------------------------------------------------------------- utenti
+
+# PBKDF2-HMAC-SHA256 con salt casuale per utente: nessuna dipendenza esterna
+# (bcrypt/argon2 sarebbero preferibili ma richiederebbero un pacchetto in più
+# per un archivio interno a un reparto — questo è comunque robusto contro
+# rainbow table e attacchi a forza bruta offline).
+_ITERAZIONI_HASH = 200_000
+
+def _hash_password(password: str, salt: bytes) -> bytes:
+    return hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, _ITERAZIONI_HASH)
+
+def crea_utente(con: sqlite3.Connection, username: str, password: str):
+    salt = secrets.token_bytes(16)
+    hash_ = _hash_password(password, salt)
+    con.execute(
+        "INSERT INTO utenti(username, salt, hash) VALUES (?,?,?) "
+        "ON CONFLICT(username) DO UPDATE SET salt=excluded.salt, hash=excluded.hash",
+        (username, salt.hex(), hash_.hex()),
+    )
+    con.commit()
+
+def elimina_utente(con: sqlite3.Connection, username: str) -> bool:
+    cur = con.execute("DELETE FROM utenti WHERE username = ?", (username,))
+    con.commit()
+    return cur.rowcount > 0
+
+def lista_utenti(con: sqlite3.Connection) -> list[str]:
+    return [r[0] for r in con.execute("SELECT username FROM utenti ORDER BY username")]
+
+def verifica_utente(con: sqlite3.Connection, username: str, password: str) -> bool:
+    row = con.execute("SELECT salt, hash FROM utenti WHERE username = ?", (username,)).fetchone()
+    if not row:
+        # calcola comunque un hash "a vuoto" con lo stesso costo: evita che il
+        # tempo di risposta riveli se lo username esiste o no
+        _hash_password(password, secrets.token_bytes(16))
+        return False
+    salt_hex, hash_hex = row
+    calcolato = _hash_password(password, bytes.fromhex(salt_hex))
+    return hmac.compare_digest(calcolato, bytes.fromhex(hash_hex))
 
 # ---------------------------------------------------------------- OCR
 

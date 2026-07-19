@@ -6,19 +6,17 @@ Avvio:
     pip install fastapi uvicorn python-multipart pytesseract pillow pymupdf
     sudo apt install tesseract-ocr tesseract-ocr-ita
 
-    # credenziali obbligatorie (autenticazione HTTP Basic su tutta l'app):
-    export BOLLE_USER=magazzino
-    export BOLLE_PASS=una-password-a-scelta      # PowerShell: $env:BOLLE_PASS="..."
+    # almeno un utente, creato una volta sola da riga di comando:
+    python cerca_bolle.py utente aggiungi <nome>
 
     uvicorn app_bolle:app --host 0.0.0.0 --port 8000
 
 Poi apri http://localhost:8000 (il browser chiederà utente/password)
+Altri utenti: python cerca_bolle.py utente aggiungi|rimuovi|lista
 I file caricati vengono salvati in ./archivio_bolle/ e indicizzati in bolle.db
 """
 
 import asyncio
-import os
-import secrets
 import sqlite3
 from pathlib import Path
 
@@ -30,32 +28,39 @@ from PIL import Image
 from bolle_core import (
     apri_db as _apri_db,
     indicizza_file as _indicizza_file,
+    lista_utenti,
     trigrammi,
     trova_file,
+    verifica_utente,
 )
 
 ARCHIVIO = Path("archivio_bolle")
 ARCHIVIO.mkdir(exist_ok=True)
 
 # ---------------------------------------------------------------- autenticazione
-# Un solo utente condiviso (HTTP Basic): sufficiente per un archivio interno
-# a un reparto, senza dover gestire un vero sistema di account.
+# Utenti con password hashata nel database (HTTP Basic Auth su tutta l'app):
+# gestiti da riga di comando con `python cerca_bolle.py utente ...`.
 
-_UTENTE = os.environ.get("BOLLE_USER")
-_PASSWORD = os.environ.get("BOLLE_PASS")
-if not _UTENTE or not _PASSWORD:
-    raise SystemExit(
-        "Imposta le variabili d'ambiente BOLLE_USER e BOLLE_PASS prima di avviare "
-        "il server (es. export BOLLE_USER=magazzino / export BOLLE_PASS=...). "
-        "Servono per proteggere l'accesso all'archivio via HTTP Basic Auth."
-    )
+_con = _apri_db()
+try:
+    if not lista_utenti(_con):
+        raise SystemExit(
+            "Nessun utente configurato. Crea il primo con:\n"
+            "    python cerca_bolle.py utente aggiungi <nome>\n"
+            "poi riavvia il server."
+        )
+finally:
+    _con.close()
 
 _security = HTTPBasic()
 
 def _verifica_credenziali(credenziali: HTTPBasicCredentials = Depends(_security)):
-    utente_ok = secrets.compare_digest(credenziali.username, _UTENTE)
-    password_ok = secrets.compare_digest(credenziali.password, _PASSWORD)
-    if not (utente_ok and password_ok):
+    con = _apri_db()
+    try:
+        ok = verifica_utente(con, credenziali.username, credenziali.password)
+    finally:
+        con.close()
+    if not ok:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenziali non valide",

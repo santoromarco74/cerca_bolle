@@ -7,15 +7,28 @@ Uso:
     python cerca_bolle.py cerca "friggitrice ad aria"
     python cerca_bolle.py cerca --tutto "coop savona"   # cerca su tutto il testo, non solo righe articolo
 
+    python cerca_bolle.py utente aggiungi <nome>   # crea o aggiorna un utente per l'accesso web
+    python cerca_bolle.py utente rimuovi <nome>
+    python cerca_bolle.py utente lista
+
 Requisiti: pip install pytesseract pillow pymupdf
            apt install tesseract-ocr tesseract-ocr-ita
 Database:  bolle.db (SQLite, nella cartella corrente)
 """
 
+import getpass
 import sys
 from pathlib import Path
 
-from bolle_core import apri_db, indicizza_file, trigrammi, trova_file
+from bolle_core import (
+    apri_db,
+    crea_utente,
+    elimina_utente,
+    indicizza_file,
+    lista_utenti,
+    trigrammi,
+    trova_file,
+)
 
 # ---------------------------------------------------------------- comandi
 
@@ -87,20 +100,62 @@ def cerca_fuzzy(con, query: str, soglia: float = 0.25, limite: int = 10):
     risultati.sort(reverse=True)
     return risultati[:limite]
 
+def comando_utente(args: list[str]):
+    if not args:
+        print(__doc__)
+        return
+    sotto, resto = args[0], args[1:]
+    con = apri_db()
+    if sotto == "aggiungi":
+        if not resto:
+            print("Uso: python cerca_bolle.py utente aggiungi <nome>")
+            return
+        username = resto[0]
+        pw1 = getpass.getpass("Password: ")
+        pw2 = getpass.getpass("Ripeti password: ")
+        if pw1 != pw2:
+            print("Le due password non coincidono, riprova.")
+        elif len(pw1) < 8:
+            print("Serve una password di almeno 8 caratteri.")
+        else:
+            crea_utente(con, username, pw1)
+            print(f"Utente '{username}' creato/aggiornato.")
+    elif sotto == "rimuovi":
+        if not resto:
+            print("Uso: python cerca_bolle.py utente rimuovi <nome>")
+        elif elimina_utente(con, resto[0]):
+            print(f"Utente '{resto[0]}' rimosso.")
+        else:
+            print(f"Utente '{resto[0]}' non trovato.")
+    elif sotto == "lista":
+        utenti = lista_utenti(con)
+        print("\n".join(utenti) if utenti else "Nessun utente configurato.")
+    else:
+        print(__doc__)
+    con.close()
+
 # ---------------------------------------------------------------- main
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
+    if len(sys.argv) < 2:
         print(__doc__)
         sys.exit(1)
     cmd = sys.argv[1]
     if cmd == "indicizza":
+        if len(sys.argv) < 3:
+            print(__doc__)
+            sys.exit(1)
         indicizza(sys.argv[2:])
     elif cmd == "cerca":
+        if len(sys.argv) < 3:
+            print(__doc__)
+            sys.exit(1)
         args = sys.argv[2:]
         tutto = "--tutto" in args
         query = " ".join(a for a in args if a != "--tutto")
         cerca(query, tutto)
+    elif cmd == "utente":
+        comando_utente(sys.argv[2:])
     else:
         print(__doc__)
         sys.exit(1)
