@@ -27,7 +27,12 @@ from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from PIL import Image
 
-from bolle_core import apri_db as _apri_db, indicizza_file as _indicizza_file, trigrammi
+from bolle_core import (
+    apri_db as _apri_db,
+    indicizza_file as _indicizza_file,
+    trigrammi,
+    trova_file,
+)
 
 ARCHIVIO = Path("archivio_bolle")
 ARCHIVIO.mkdir(exist_ok=True)
@@ -140,6 +145,32 @@ async def upload(files: list[UploadFile] = File(...)):
     contenuti = [(f.filename, await f.read()) for f in files]
     esiti = await asyncio.gather(
         *(asyncio.to_thread(_salva_e_indicizza, nome, dati) for nome, dati in contenuti)
+    )
+    return JSONResponse(list(esiti))
+
+def _copia_e_indicizza(sorgente: Path) -> dict:
+    """Copia (se non già presente) un file esterno in archivio_bolle/ e lo indicizza."""
+    dest = ARCHIVIO / sorgente.name
+    if dest.exists() and dest.read_bytes() != sorgente.read_bytes():
+        n = 2
+        while (ARCHIVIO / f"{sorgente.stem}_{n}{sorgente.suffix}").exists():
+            n += 1
+        dest = ARCHIVIO / f"{sorgente.stem}_{n}{sorgente.suffix}"
+    if not dest.exists():
+        dest.write_bytes(sorgente.read_bytes())
+    try:
+        return indicizza_file(dest)
+    except Exception as e:
+        return {"file": sorgente.name, "stato": f"errore: {e}"}
+
+@app.post("/api/indicizza-cartella")
+async def indicizza_cartella(percorso: str):
+    cartella = Path(percorso)
+    if not cartella.is_dir():
+        return JSONResponse({"errore": f"cartella non trovata: {percorso}"}, status_code=404)
+    trovati = await asyncio.to_thread(trova_file, cartella)
+    esiti = await asyncio.gather(
+        *(asyncio.to_thread(_copia_e_indicizza, f) for f in trovati)
     )
     return JSONResponse(list(esiti))
 
@@ -317,6 +348,11 @@ main{max-width:880px;margin:0 auto;padding:26px 24px 80px}
 .zona strong{color:var(--inchiostro)}
 #esiti{margin-top:14px;font-family:'IBM Plex Mono',monospace;font-size:.78rem;line-height:1.7}
 #esiti .ok{color:var(--ok)} #esiti .err{color:var(--evid)}
+.sezione-cartella{margin-top:30px;color:var(--grigio);font-size:.9rem}
+.sezione-cartella strong{color:var(--inchiostro);display:block;margin-bottom:8px}
+.sezione-cartella .barra{margin-top:0}
+#esiti-cartella{margin-top:14px;font-family:'IBM Plex Mono',monospace;font-size:.78rem;line-height:1.7}
+#esiti-cartella .ok{color:var(--ok)} #esiti-cartella .err{color:var(--evid)}
 .lavoro{color:var(--timbro)}
 @media (max-width:620px){
   .ris{grid-template-columns:1fr;gap:3px}
@@ -349,6 +385,18 @@ main{max-width:880px;margin:0 auto;padding:26px 24px 80px}
     <input id="filein" type="file" multiple accept=".tif,.tiff,.pdf,.png,.jpg,.jpeg" hidden>
   </div>
   <div id="esiti"></div>
+
+  <div class="sezione-cartella">
+    <strong>Oppure indicizza una cartella già sul server</strong>
+    (viene scansionata ricorsivamente e ogni file copiato in
+    <span class="mono">archivio_bolle/</span>):
+    <div class="barra">
+      <input id="cartella" type="text" class="mono" autocomplete="off"
+             placeholder="es. C:\\Users\\...\\Pictures oppure \\\\server\\condivisa\\bolle">
+      <button onclick="indicizzaCartella()">Indicizza cartella</button>
+    </div>
+  </div>
+  <div id="esiti-cartella"></div>
 </main>
 
 <script>
@@ -361,6 +409,16 @@ async function stato(){
 stato();
 
 function esc(s){const d=document.createElement('div');d.textContent=s??'';return d.innerHTML}
+
+function renderEsiti(elem, esiti){
+  elem.innerHTML = esiti.map(x =>
+    x.stato==='ok'
+      ? '<span class="ok">✓</span> '+esc(x.file)+' → bolla '+esc(x.bolla||'?')+' del '+esc(x.data||'?')+', '+x.pagine+' pag., '+x.righe+' righe'
+      : (x.stato==='già indicizzato'
+          ? '<span>·</span> '+esc(x.file)+' — già in archivio'
+          : '<span class="err">✗</span> '+esc(x.file)+' — '+esc(x.stato))
+  ).join('<br>') || '<span class="vuoto">Nessun file indicizzabile trovato.</span>';
+}
 
 async function cerca(){
   const q = $('#q').value.trim();
@@ -416,18 +474,28 @@ async function invia(files){
   $('#esiti').innerHTML = '<span class="lavoro">OCR e indicizzazione in corso ('+files.length+' file)… può richiedere qualche secondo a pagina.</span>';
   try{
     const r = await fetch('/api/upload', {method:'POST', body:fd}).then(r=>r.json());
-    $('#esiti').innerHTML = r.map(x =>
-      x.stato==='ok'
-        ? '<span class="ok">✓</span> '+esc(x.file)+' → bolla '+esc(x.bolla||'?')+' del '+esc(x.data||'?')+', '+x.pagine+' pag., '+x.righe+' righe'
-        : (x.stato==='già indicizzato'
-            ? '<span>·</span> '+esc(x.file)+' — già in archivio'
-            : '<span class="err">✗</span> '+esc(x.file)+' — '+esc(x.stato))
-    ).join('<br>');
+    renderEsiti($('#esiti'), r);
   }catch(e){
     $('#esiti').innerHTML = '<span class="err">✗ Caricamento non riuscito: '+esc(e.message)+'</span>';
   }
   stato();
 }
+
+/* indicizzazione cartella */
+async function indicizzaCartella(){
+  const percorso = $('#cartella').value.trim();
+  if(!percorso) return;
+  $('#esiti-cartella').innerHTML = '<span class="lavoro">Scansione e indicizzazione in corso… con molti file può richiedere parecchio tempo.</span>';
+  try{
+    const r = await fetch('/api/indicizza-cartella?percorso='+encodeURIComponent(percorso), {method:'POST'}).then(r=>r.json());
+    if(r.errore){ $('#esiti-cartella').innerHTML = '<span class="err">✗ '+esc(r.errore)+'</span>'; return; }
+    renderEsiti($('#esiti-cartella'), r);
+  }catch(e){
+    $('#esiti-cartella').innerHTML = '<span class="err">✗ Richiesta non riuscita: '+esc(e.message)+'</span>';
+  }
+  stato();
+}
+$('#cartella').addEventListener('keydown', e => { if(e.key==='Enter') indicizzaCartella(); });
 </script>
 </body>
 </html>"""
