@@ -144,6 +144,14 @@ def estrai_righe(testo: str) -> list[tuple[str, str]]:
 
 # ---------------------------------------------------------------- indicizzazione
 
+ESTENSIONI_SUPPORTATE = (".tif", ".tiff", ".pdf", ".png", ".jpg", ".jpeg")
+
+def trova_file(percorso: Path) -> list[Path]:
+    """File indicizzabili in un percorso: se è una cartella, la scansiona ricorsivamente."""
+    if percorso.is_dir():
+        return sorted(f for f in percorso.rglob("*") if f.suffix.lower() in ESTENSIONI_SUPPORTATE)
+    return [percorso]
+
 def indicizza_file(con: sqlite3.Connection, path: Path) -> dict:
     """OCR + parsing + inserimento di un singolo file. Comune a CLI e web."""
     if con.execute("SELECT 1 FROM documenti WHERE file_path=?", (str(path),)).fetchone():

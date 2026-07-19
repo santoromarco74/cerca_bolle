@@ -15,7 +15,7 @@ Database:  bolle.db (SQLite, nella cartella corrente)
 import sys
 from pathlib import Path
 
-from bolle_core import apri_db, indicizza_file, trigrammi
+from bolle_core import apri_db, indicizza_file, trigrammi, trova_file
 
 # ---------------------------------------------------------------- comandi
 
@@ -23,12 +23,7 @@ def indicizza(percorsi: list[str]):
     con = apri_db()
     files = []
     for p in percorsi:
-        p = Path(p)
-        if p.is_dir():
-            files += [f for f in p.rglob("*") if f.suffix.lower() in
-                      (".tif", ".tiff", ".pdf", ".png", ".jpg", ".jpeg")]
-        else:
-            files.append(p)
+        files += trova_file(Path(p))
 
     for f in files:
         print(f"  OCR: {f.name} ...", end=" ", flush=True)

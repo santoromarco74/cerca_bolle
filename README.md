@@ -64,14 +64,18 @@ uvicorn app_bolle:app --host 0.0.0.0 --port 8000
 
 Poi apri `http://localhost:8000` — il browser chiederà utente e password.
 La pagina permette di cercare, caricare nuove bolle via drag&drop (OCR e
-indicizzazione immediati) e visualizzare le pagine direttamente nel browser
-(utile perché i TIF non sono renderizzabili nativamente).
+indicizzazione immediati), **indicizzare in blocco una cartella già presente
+sul server/rete** (scansionata ricorsivamente, ogni file trovato viene
+copiato in `archivio_bolle/` e indicizzato) e visualizzare le pagine
+direttamente nel browser (utile perché i TIF non sono renderizzabili
+nativamente).
 
 Endpoint principali:
 
 | Endpoint | Cosa fa |
 |---|---|
-| `POST /api/upload` | carica uno o più file, li salva in `archivio_bolle/`, esegue OCR e indicizza (sincrono) |
+| `POST /api/upload` | carica uno o più file, li salva in `archivio_bolle/`, esegue OCR e indicizza |
+| `POST /api/indicizza-cartella?percorso=...` | scansiona ricorsivamente una cartella sul filesystem del server, copia in `archivio_bolle/` e indicizza ogni file trovato (rifà la stessa cosa della CLI, ma restando nella UI web) |
 | `GET /api/cerca?q=...&modo=righe\|documenti` | ricerca per riga articolo o su tutto il documento |
 | `GET /api/stato` | conteggio documenti/righe indicizzati |
 | `GET /api/file?id=N` | scarica l'originale — l'autorizzazione è "è un documento registrato in `bolle.db`", indipendentemente da dove si trova sul disco |
