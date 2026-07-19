@@ -345,7 +345,7 @@ async function cerca(){
         + '<div class="desc">'+esc(x.descrizione)+tag+'</div>'
         + '<div class="meta">bolla <b>'+esc(x.bolla||'?')+'</b> del '+esc(x.data||'?')
         + ' · pag. '+x.pagina+'<br><a href="/vedi/'+x.doc_id+'" target="_blank" rel="noopener">'+esc(x.file)+'</a>'
-        + ' · <a href="/api/file?id='+x.doc_id+'" title="scarica l\'originale">&#8595;</a></div>'
+        + ' · <a href="/api/file?id='+x.doc_id+'" title="scarica l\\'originale">&#8595;</a></div>'
         + '</div>';
     }
   } else {
@@ -355,7 +355,7 @@ async function cerca(){
         + '<div class="desc">'+x.snippet+'</div>'
         + '<div class="meta">bolla <b>'+esc(x.bolla||'?')+'</b> del '+esc(x.data||'?')
         + '<br><a href="/vedi/'+x.doc_id+'" target="_blank" rel="noopener">'+esc(x.file)+'</a>'
-        + ' · <a href="/api/file?id='+x.doc_id+'" title="scarica l\'originale">&#8595;</a></div>'
+        + ' · <a href="/api/file?id='+x.doc_id+'" title="scarica l\\'originale">&#8595;</a></div>'
         + '</div>';
     }
   }
