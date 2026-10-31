@@ -111,7 +111,10 @@ Endpoint principali:
 - L'OCR in upload gira in un thread separato per ogni file (`asyncio.to_thread`),
   e più file caricati insieme vengono processati in parallelo invece che in
   coda: un upload lungo non blocca più né gli altri file dello stesso upload
-  né le altre richieste al server (ricerche, altri utenti). Il database ha
+  né le altre richieste al server (ricerche, altri utenti). Gli OCR
+  simultanei sono al massimo uno per core e ogni Tesseract usa un solo thread
+  (`OMP_THREAD_LIMIT=1`): senza questo limite più OCR insieme si contendono i
+  core e ciascuna pagina diventa decine di volte più lenta. Il database ha
   un `busy_timeout` per assorbire scritture concorrenti.
 - Le regex di parsing sono tarate solo su GAER: bolle di altri fornitori con
   layout diverso vanno indicizzate correttamente come testo, ma senza

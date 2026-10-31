@@ -22,6 +22,11 @@ import pytesseract
 DB_PATH = "bolle.db"
 LANG = "ita"
 
+# Tesseract avvia thread OpenMP in attesa attiva: con più OCR in parallelo si
+# contendono i core e ogni pagina passa da ~1,4 s a oltre un minuto. Un thread
+# per processo non costa nulla su una pagina singola e scala con i processi.
+os.environ.setdefault("OMP_THREAD_LIMIT", "1")
+
 # --- Rilevamento Tesseract su Windows -------------------------------------
 # pytesseract e' solo un wrapper: serve tesseract.exe installato.
 # Se non e' nel PATH, lo cerchiamo nei percorsi di installazione tipici,
