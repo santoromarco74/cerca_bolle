@@ -126,6 +126,10 @@ Endpoint principali:
   utente ...`), password hashate nel DB: ogni persona ha le proprie
   credenziali, ma non ci sono ruoli/permessi differenziati — chiunque abbia
   un account può fare tutto (cercare, caricare, scaricare).
+  Le password già verificate vengono ricordate in memoria (come impronta HMAC)
+  per non rifare PBKDF2 a ogni richiesta HTTP; la cache è legata al salt e
+  all'hash letti dal DB, quindi cambiare password o rimuovere un utente da CLI
+  ha effetto subito, senza riavviare il server.
 
 ## Prossimi possibili passi
 

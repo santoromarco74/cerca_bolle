@@ -144,6 +144,15 @@ def elimina_utente(con: sqlite3.Connection, username: str) -> bool:
 def lista_utenti(con: sqlite3.Connection) -> list[str]:
     return [r[0] for r in con.execute("SELECT username FROM utenti ORDER BY username")]
 
+# HTTP Basic rimanda la password a ogni richiesta e PBKDF2 costa ~59 ms: si
+# ricorda quindi l'impronta (HMAC con chiave casuale del processo) delle password
+# già verificate. La chiave include salt e hash letti dal database a ogni
+# chiamata, perciò password cambiata o utente rimosso (anche da un altro
+# processo, come la CLI) hanno effetto subito, senza attendere una scadenza.
+_CHIAVE_CACHE = secrets.token_bytes(32)
+_MAX_VERIFICATE = 256
+_verificate: dict[tuple[str, str, str], bytes] = {}
+
 def verifica_utente(con: sqlite3.Connection, username: str, password: str) -> bool:
     row = con.execute("SELECT salt, hash FROM utenti WHERE username = ?", (username,)).fetchone()
     if not row:
@@ -152,8 +161,18 @@ def verifica_utente(con: sqlite3.Connection, username: str, password: str) -> bo
         _hash_password(password, secrets.token_bytes(16))
         return False
     salt_hex, hash_hex = row
+    impronta = hmac.digest(_CHIAVE_CACHE, password.encode("utf-8"), "sha256")
+    chiave = (username, salt_hex, hash_hex)
+    nota = _verificate.get(chiave)
+    if nota is not None and hmac.compare_digest(nota, impronta):
+        return True
     calcolato = _hash_password(password, bytes.fromhex(salt_hex))
-    return hmac.compare_digest(calcolato, bytes.fromhex(hash_hex))
+    if not hmac.compare_digest(calcolato, bytes.fromhex(hash_hex)):
+        return False
+    if len(_verificate) >= _MAX_VERIFICATE:
+        _verificate.clear()
+    _verificate[chiave] = impronta
+    return True
 
 # ---------------------------------------------------------------- OCR
 
