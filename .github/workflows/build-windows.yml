@@ -58,15 +58,20 @@ jobs:
 
       - name: Collaudo reale del pacchetto (crea utente + avvia il server)
         shell: pwsh
+        timeout-minutes: 8
         run: |
           Set-Location "dist\ArchivioBolle"
 
           & ".\cli\cerca_bolle.exe" utente lista
           if ($LASTEXITCODE -ne 0) { throw "cerca_bolle.exe (utente lista) ha fallito" }
 
-          "provaprova1`nprovaprova1`n" | & ".\cli\cerca_bolle.exe" utente aggiungi collaudo
-          if ($LASTEXITCODE -ne 0) { throw "cerca_bolle.exe (utente aggiungi) ha fallito" }
-          & ".\cli\cerca_bolle.exe" utente lista
+          # `utente aggiungi` chiede la password con getpass, che su Windows legge
+          # dalla console e non dalla pipe: su un runner senza console resta in
+          # attesa per sempre. L'utente di prova si crea quindi dal codice.
+          python -c "import sys; sys.path.insert(0, '../..'); import bolle_core as bc; con = bc.apri_db(); bc.crea_utente(con, 'collaudo', 'provaprova1'); con.close()"
+          if ($LASTEXITCODE -ne 0) { throw "creazione dell'utente di prova fallita" }
+          $utenti = & ".\cli\cerca_bolle.exe" utente lista
+          if ($utenti -notcontains "collaudo") { throw "cerca_bolle.exe non vede l'utente di prova: $utenti" }
 
           $proc = Start-Process -FilePath ".\web\ArchivioBolleWeb.exe" -PassThru -WindowStyle Hidden
           try {
