@@ -17,7 +17,9 @@ I file caricati vengono salvati in ./archivio_bolle/ e indicizzati in bolle.db
 """
 
 import asyncio
+import os
 import sqlite3
+import threading
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, UploadFile, File, status
@@ -72,12 +74,16 @@ app = FastAPI(title="Archivio Bolle", dependencies=[Depends(_verifica_credenzial
 def apri_db():
     return _apri_db()
 
+# Un OCR per core: asyncio.to_thread ne lancerebbe fino a cpu+4 insieme.
+_slot_ocr = threading.BoundedSemaphore(os.cpu_count() or 2)
+
 def indicizza_file(path: Path) -> dict:
-    con = apri_db()
-    try:
-        return _indicizza_file(con, path)
-    finally:
-        con.close()
+    with _slot_ocr:
+        con = apri_db()
+        try:
+            return _indicizza_file(con, path)
+        finally:
+            con.close()
 
 # ---------------------------------------------------------------- ricerca
 
@@ -97,9 +103,9 @@ def cerca_righe(query: str, limite: int = 30) -> list[dict]:
         visti.add((fp, pag, cod))
         out.append({"tipo": "esatto", "score": 1.0, "file": Path(fp).name, "doc_id": did,
                     "bolla": num, "data": data, "pagina": pag, "codice": cod, "descrizione": desc})
-    # fallback / integrazione fuzzy
+    # fallback / integrazione fuzzy: inutile se gli esatti riempiono già il limite
     tq = trigrammi(query)
-    if tq:
+    if tq and len(out) < limite:
         fuzzy = []
         for did, fp, num, data, pag, cod, desc in con.execute(
                 "SELECT d.id, d.file_path, d.numero_bolla, d.data_bolla, r.pagina, r.codice, r.descrizione "
@@ -238,7 +244,7 @@ def api_pagina(id: int, n: int = 1):
                 return JSONResponse({"errore": "pagina inesistente"}, status_code=404)
             img.seek(n - 1)
             buf = io.BytesIO()
-            img.convert("L").save(buf, format="PNG", optimize=True)
+            img.convert("L").save(buf, format="PNG")
             dati = buf.getvalue()
     except Exception as e:
         return JSONResponse({"errore": f"conversione fallita: {e}"}, status_code=500)
